@@ -26,7 +26,7 @@ contract Deploy is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        
+
         console.log("Deploying contracts with account:", deployer);
         console.log("Account balance:", deployer.balance);
 
@@ -68,7 +68,7 @@ contract Deploy is Script {
         // 7. Register agent in IdentityRegistry
         console.log("Registering agent in IdentityRegistry...");
         vm.startBroadcast(deployerPrivateKey);
-        
+
         string memory metadataUri = "https://example.com/agent-metadata.json";
         agent.register(metadataUri);
         console.log("Agent registered with metadata URI:", metadataUri);
@@ -99,7 +99,9 @@ contract Deploy is Script {
         // Verify the setup
         console.log("=== VERIFICATION ===");
         console.log("Agent registered:", identityRegistry.isAgentRegistered(address(agent)));
-        console.log("Agent validated for vault:", validationRegistry.isAgentValidated(address(agent), address(trustlessVault)));
+        console.log(
+            "Agent validated for vault:", validationRegistry.isAgentValidated(address(agent), address(trustlessVault))
+        );
         console.log("Agent reputation:", reputationRegistry.reputationOf(address(agent)));
         console.log("MockToken balance:", mockToken.balanceOf(deployer));
         console.log("===================\n");

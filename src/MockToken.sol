@@ -15,7 +15,7 @@ contract MockToken is ERC20 {
      */
     constructor() ERC20("MockToken", "MTK") {
         // Mint 1,000,000 tokens with 18 decimals to the deployer
-        _mint(msg.sender, 1000000 * 10**18);
+        _mint(msg.sender, 1000000 * 10 ** 18);
     }
 
     /**

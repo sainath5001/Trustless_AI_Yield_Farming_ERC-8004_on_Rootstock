@@ -30,8 +30,8 @@ contract VaultTest is Test {
     address public nonValidatedAgent;
 
     // Test constants
-    uint256 public constant INITIAL_SUPPLY = 1000000 * 10**18;
-    uint256 public constant STAKE_AMOUNT = 1000 * 10**18;
+    uint256 public constant INITIAL_SUPPLY = 1000000 * 10 ** 18;
+    uint256 public constant STAKE_AMOUNT = 1000 * 10 ** 18;
 
     function setUp() public {
         // Set up test addresses
@@ -181,7 +181,7 @@ contract VaultTest is Test {
     function testValidationRegistryAdmin() public {
         // Test admin functions
         address newAdmin = makeAddr("newAdmin");
-        
+
         // Only admin can set validation
         vm.expectRevert("ValidationRegistry: Only admin can perform this action");
         vm.prank(user1);
@@ -199,7 +199,7 @@ contract VaultTest is Test {
     function testVaultOwnerFunctions() public {
         // Test owner functions
         address newRegistry = makeAddr("newRegistry");
-        
+
         // Only owner can set validation registry
         vm.expectRevert();
         vm.prank(user1);
@@ -212,7 +212,7 @@ contract VaultTest is Test {
 
     function testAgentOwnerFunctions() public {
         // Test agent owner functions
-        
+
         // Only owner can call harvest
         vm.expectRevert();
         vm.prank(user1);
@@ -235,7 +235,7 @@ contract VaultTest is Test {
         uint256 stakeAmount = STAKE_AMOUNT;
         vm.startPrank(user1);
         mockToken.approve(address(trustlessVault), stakeAmount);
-        
+
         vm.expectEmit(true, false, false, true);
         emit TrustlessVault.Staked(user1, stakeAmount, block.timestamp);
         trustlessVault.stake(stakeAmount);
@@ -245,7 +245,7 @@ contract VaultTest is Test {
         vm.expectEmit(true, true, false, true);
         uint256 expectedReward = (stakeAmount * 1000) / 1000000;
         emit TrustlessVault.Harvested(address(agent), user1, expectedReward, block.timestamp);
-        
+
         vm.prank(address(agent));
         trustlessVault.harvest(user1);
     }
