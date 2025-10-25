@@ -21,6 +21,7 @@ contract Deploy is Script {
     ValidationRegistry public validationRegistry;
     MockToken public mockToken;
     TrustlessVault public trustlessVault;
+    JobCommitmentRegistry public jobCommitmentRegistry;
     Agent public agent;
 
     function run() external {
@@ -42,30 +43,35 @@ contract Deploy is Script {
         reputationRegistry = new ReputationRegistry();
         console.log("ReputationRegistry deployed at:", address(reputationRegistry));
 
-        // 3. Deploy ValidationRegistry
-        console.log("Deploying ValidationRegistry...");
-        validationRegistry = new ValidationRegistry(deployer); // Deployer is the initial admin
-        console.log("ValidationRegistry deployed at:", address(validationRegistry));
-
-        // 4. Deploy MockToken
+        // 3. Deploy MockToken
         console.log("Deploying MockToken...");
         mockToken = new MockToken();
         console.log("MockToken deployed at:", address(mockToken));
         console.log("MockToken balance of deployer:", mockToken.balanceOf(deployer));
 
+        // 4. Deploy ValidationRegistry
+        console.log("Deploying ValidationRegistry...");
+        validationRegistry = new ValidationRegistry(deployer, address(mockToken), 1000 * 10 ** 18, 30 days); // 1000 tokens min stake, 30 days expiry
+        console.log("ValidationRegistry deployed at:", address(validationRegistry));
+
         // 5. Deploy TrustlessVault
         console.log("Deploying TrustlessVault...");
-        trustlessVault = new TrustlessVault(address(mockToken), address(validationRegistry));
+        trustlessVault = new TrustlessVault(address(mockToken), address(validationRegistry), 1 * 10 ** 18); // 1 token per second reward rate
         console.log("TrustlessVault deployed at:", address(trustlessVault));
 
-        // 6. Deploy Agent
+        // 6. Deploy JobCommitmentRegistry
+        console.log("Deploying JobCommitmentRegistry...");
+        jobCommitmentRegistry = new JobCommitmentRegistry();
+        console.log("JobCommitmentRegistry deployed at:", address(jobCommitmentRegistry));
+
+        // 7. Deploy Agent
         console.log("Deploying Agent...");
-        agent = new Agent(address(identityRegistry));
+        agent = new Agent(address(identityRegistry), address(jobCommitmentRegistry));
         console.log("Agent deployed at:", address(agent));
 
         vm.stopBroadcast();
 
-        // 7. Register agent in IdentityRegistry
+        // 8. Register agent in IdentityRegistry
         console.log("Registering agent in IdentityRegistry...");
         vm.startBroadcast(deployerPrivateKey);
 
@@ -73,14 +79,16 @@ contract Deploy is Script {
         agent.register(metadataUri);
         console.log("Agent registered with metadata URI:", metadataUri);
 
-        // 8. Set agent validation in ValidationRegistry
+        // 9. Set agent validation in ValidationRegistry
         console.log("Setting agent validation in ValidationRegistry...");
-        validationRegistry.setValidation(address(agent), address(trustlessVault), true);
+        validationRegistry.setValidation(
+            address(agent), address(trustlessVault), true, 1000 * 10 ** 18, "Initial validation for testing"
+        );
         console.log("Agent validation set for vault");
 
-        // 9. Set reputation for the agent
+        // 10. Set reputation for the agent
         console.log("Setting agent reputation...");
-        reputationRegistry.setReputation(address(agent), 1000); // High reputation score
+        reputationRegistry.setReputation(address(agent), 1000, "Initial high reputation score"); // High reputation score
         console.log("Agent reputation set to 1000");
 
         vm.stopBroadcast();
@@ -92,7 +100,7 @@ contract Deploy is Script {
         console.log("ValidationRegistry:", address(validationRegistry));
         console.log("MockToken:", address(mockToken));
         console.log("TrustlessVault:", address(trustlessVault));
-        console.log("Agent:", address(agent));
+        console.log("JobCommitmentRegistry:", address(jobCommitmentRegistry));
         console.log("Deployer:", deployer);
         console.log("========================\n");
 

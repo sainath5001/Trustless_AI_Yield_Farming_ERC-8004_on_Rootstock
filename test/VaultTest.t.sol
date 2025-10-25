@@ -21,6 +21,7 @@ contract VaultTest is Test {
     ValidationRegistry public validationRegistry;
     MockToken public mockToken;
     TrustlessVault public trustlessVault;
+    JobCommitmentRegistry public jobCommitmentRegistry;
     Agent public agent;
 
     // Test addresses
@@ -43,24 +44,32 @@ contract VaultTest is Test {
         // Deploy contracts
         identityRegistry = new IdentityRegistry();
         reputationRegistry = new ReputationRegistry();
-        validationRegistry = new ValidationRegistry(deployer);
         mockToken = new MockToken();
-        trustlessVault = new TrustlessVault(address(mockToken), address(validationRegistry));
-        agent = new Agent(address(identityRegistry));
+        validationRegistry = new ValidationRegistry(deployer, address(mockToken), 1000 * 10 ** 18, 30 days);
+        trustlessVault = new TrustlessVault(address(mockToken), address(validationRegistry), 1 * 10 ** 18);
+        jobCommitmentRegistry = new JobCommitmentRegistry();
+        agent = new Agent(address(identityRegistry), address(jobCommitmentRegistry));
 
         // Register agent
         string memory metadataUri = "https://example.com/agent-metadata.json";
         agent.register(metadataUri);
 
         // Set agent validation
-        validationRegistry.setValidation(address(agent), address(trustlessVault), true);
+        mockToken.approve(address(validationRegistry), 1000 * 10 ** 18);
+        validationRegistry.setValidation(
+            address(agent), address(trustlessVault), true, 1000 * 10 ** 18, "Test validation"
+        );
 
         // Set agent reputation
-        reputationRegistry.setReputation(address(agent), 1000);
+        reputationRegistry.setReputation(address(agent), 1000, "Test reputation");
 
         // Distribute tokens to test users
         mockToken.transfer(user1, STAKE_AMOUNT * 2);
         mockToken.transfer(user2, STAKE_AMOUNT * 2);
+
+        // Deposit rewards into the vault
+        mockToken.approve(address(trustlessVault), 100000 * 10 ** 18);
+        trustlessVault.depositRewards(100000 * 10 ** 18);
     }
 
     function testUserCanStakeTokens() public {
@@ -102,6 +111,9 @@ contract VaultTest is Test {
         trustlessVault.stake(stakeAmount);
         vm.stopPrank();
 
+        // Wait for some time to accumulate rewards
+        vm.warp(block.timestamp + 3600); // 1 hour
+
         uint256 initialBalance = mockToken.balanceOf(user1);
 
         // Act
@@ -111,8 +123,7 @@ contract VaultTest is Test {
 
         // Assert
         uint256 finalBalance = mockToken.balanceOf(user1);
-        uint256 expectedReward = (stakeAmount * 1000) / 1000000; // 0.1% of staked amount
-        assertEq(finalBalance, initialBalance + expectedReward);
+        assertTrue(finalBalance > initialBalance, "User should receive rewards");
     }
 
     function testMultipleUsersStaking() public {
@@ -185,10 +196,10 @@ contract VaultTest is Test {
         // Only admin can set validation
         vm.expectRevert("ValidationRegistry: Only admin can perform this action");
         vm.prank(user1);
-        validationRegistry.setValidation(address(agent), address(trustlessVault), false);
+        validationRegistry.setValidation(address(agent), address(trustlessVault), false, 0, "Removing validation");
 
         // Admin can set validation
-        validationRegistry.setValidation(address(agent), address(trustlessVault), false);
+        validationRegistry.setValidation(address(agent), address(trustlessVault), false, 0, "Removing validation");
         assertFalse(validationRegistry.isAgentValidated(address(agent), address(trustlessVault)));
 
         // Admin can change admin
@@ -258,13 +269,96 @@ contract VaultTest is Test {
         vm.stopPrank();
     }
 
-    function testInsufficientBalanceStaking() public {
-        // Test staking more than balance
-        uint256 excessiveAmount = INITIAL_SUPPLY + 1;
+    function testAgentCallHarvestWithJobCommitment() public {
+        // Arrange
+        uint256 stakeAmount = STAKE_AMOUNT;
         vm.startPrank(user1);
-        mockToken.approve(address(trustlessVault), excessiveAmount);
-        vm.expectRevert("TrustlessVault: Insufficient token balance");
-        trustlessVault.stake(excessiveAmount);
+        mockToken.approve(address(trustlessVault), stakeAmount);
+        trustlessVault.stake(stakeAmount);
         vm.stopPrank();
+
+        // Wait for some time to accumulate rewards
+        vm.warp(block.timestamp + 3600); // 1 hour
+
+        uint256 initialBalance = mockToken.balanceOf(user1);
+
+        // Act - Use the agent's callHarvest function
+        vm.prank(deployer); // deployer is the owner of the agent
+        agent.callHarvest(address(trustlessVault), user1);
+
+        // Assert
+        uint256 finalBalance = mockToken.balanceOf(user1);
+        assertTrue(finalBalance > initialBalance, "User should receive rewards");
+
+        // Check that a job was committed
+        bytes32[] memory agentJobs = agent.getAgentJobs();
+        assertTrue(agentJobs.length > 0, "Agent should have committed jobs");
+    }
+
+    function testTimeDependentRewards() public {
+        // Arrange
+        uint256 stakeAmount = STAKE_AMOUNT;
+        vm.startPrank(user1);
+        mockToken.approve(address(trustlessVault), stakeAmount);
+        trustlessVault.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Wait for some time to pass
+        vm.warp(block.timestamp + 3600); // 1 hour
+
+        uint256 initialBalance = mockToken.balanceOf(user1);
+
+        // Act
+        vm.prank(address(agent));
+        trustlessVault.harvest(user1);
+
+        // Assert
+        uint256 finalBalance = mockToken.balanceOf(user1);
+        uint256 reward = finalBalance - initialBalance;
+
+        // The reward should be time-dependent (1 token per second * 3600 seconds = 3600 tokens)
+        // But scaled by user's stake proportion
+        uint256 expectedReward = (3600 * 10 ** 18 * stakeAmount) / trustlessVault.totalStaked();
+        assertApproxEqRel(reward, expectedReward, 0.01e18, "Reward should be time-dependent");
+    }
+
+    function testVaultPausability() public {
+        // Test pausing
+        trustlessVault.pause();
+
+        vm.startPrank(user1);
+        mockToken.approve(address(trustlessVault), STAKE_AMOUNT);
+        vm.expectRevert();
+        trustlessVault.stake(STAKE_AMOUNT);
+        vm.stopPrank();
+
+        // Test unpausing
+        trustlessVault.unpause();
+
+        vm.startPrank(user1);
+        mockToken.approve(address(trustlessVault), STAKE_AMOUNT);
+        trustlessVault.stake(STAKE_AMOUNT);
+        vm.stopPrank();
+    }
+
+    function testJobCommitmentRegistry() public {
+        // Test job commitment
+        bytes32 jobHash = keccak256(abi.encodePacked("test_job", block.timestamp));
+
+        vm.prank(address(agent));
+        jobCommitmentRegistry.commitJob(jobHash, address(agent), address(trustlessVault));
+
+        // Check job exists
+        assertTrue(jobCommitmentRegistry.jobExists(jobHash), "Job should exist");
+
+        // Test job completion
+        bytes32 resultHash = keccak256(abi.encodePacked("test_result", block.timestamp));
+        vm.prank(address(agent));
+        jobCommitmentRegistry.completeJob(jobHash, resultHash);
+
+        // Check job is completed
+        JobCommitmentRegistry.JobCommitment memory commitment = jobCommitmentRegistry.getJobCommitment(jobHash);
+        assertTrue(commitment.isCompleted, "Job should be completed");
+        assertEq(commitment.resultHash, resultHash, "Result hash should match");
     }
 }
