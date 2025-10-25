@@ -16,6 +16,8 @@ Smart Contracts Overview:
 
 - TrustlessVault.sol – Core vault managing deposits and yield distribution.
 
+- JobCommitmentRegistry.sol - Contract is the backbone of the system’s claim to being truly     Trustless AI.
+
 MockToken.sol – Test ERC-20 token for staking and rewards.
 
 
